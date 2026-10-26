@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Karaoke Studio - Pro Video & Subtitle Generator</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card: #151d30;
+      --border: #24314d;
+      --accent: #ec4899;
+      --highlight: #06b6d4;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem 1rem;
+      min-height: 100vh;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 980px;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    header {
+      text-align: center;
+    }
+
+    header h1 {
+      font-size: 2.2rem;
+      background: linear-gradient(135deg, var(--highlight), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.3rem;
+    }
+
+    /* Screen / Stage */
+    .canvas-container {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 2px solid var(--border);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .recording-badge {
+      display: none;
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      background: #ef4444;
+      color: white;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: bold;
+      animation: pulse 1s infinite alternate;
+      z-index: 10;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+
+    /* Panels */
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.75rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+
+    input[type="file"], select, textarea {
+      width: 100%;
+      background: #0d1424;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 0.6rem;
+      font-size: 0.9rem;
+    }
+
+    textarea {
+      height: 110px;
+      font-family: monospace;
+      resize: vertical;
+    }
+
+    audio {
+      width: 100%;
+      margin-top: 0.4rem;
+    }
+
+    /* Buttons */
+    .btn-group {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-top: 0.75rem;
+    }
+
+    button {
+      padding: 0.75rem 1.25rem;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: all 0.2s ease;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      filter: brightness(1.15);
+    }
+
+    .btn-tap {
+      background: var(--highlight);
+      color: #0b0f19;
+      font-weight: bold;
+      flex: 1;
+      padding: 1rem;
+      font-size: 1.05rem;
+    }
+
+    .btn-record {
+      background: #10b981;
+      color: white;
+    }
+
+    .btn-secondary {
+      background: #24314d;
+      color: var(--text);
+    }
+
+    .btn-secondary:hover {
+      background: #2f4064;
+    }
+
+    /* Synchronizer Word Stream */
+    .lyrics-stream {
+      max-height: 140px;
+      overflow-y: auto;
+      background: #0d1424;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      margin-top: 0.5rem;
+    }
+
+    .stream-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 4px;
+    }
+
+    .stream-line.current {
+      background: rgba(6, 182, 212, 0.15);
+    }
+
+    .stream-word {
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      background: #1c263c;
+    }
+
+    .stream-word.synced {
+      background: #065f46;
+      color: #6ee7b7;
+    }
+
+    .stream-word.active-target {
+      background: var(--accent);
+      color: white;
+    }
+
+    /* Video element kept invisible, rendered directly via Canvas */
+    video#bgVideo {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <h1>🎤 Karaoke Studio Pro</h1>
+      <p style="color: var(--text-muted); font-size: 0.9rem;">
+        Smooth Video Looping • Single-Stanza Flow • Lead-in Countdown • MP4 Export
+      </p>
+    </header>
+
+    <!-- VIDEO/CANVAS STAGE -->
+    <div class="canvas-container">
+      <div id="recordingBadge" class="recording-badge">● RECORDING MP4...</div>
+      <canvas id="stageCanvas" width="1280" height="720"></canvas>
+    </div>
+
+    <!-- BACKGROUND VIDEO AND AUDIO SOURCES -->
+    <div class="panel">
+      <div class="grid-2">
+        <div>
+          <label>1. Background Video (Auto-Loops Infinitely)</label>
+          <input type="file" id="videoUpload" accept="video/*">
+          <video id="bgVideo" playsinline loop muted preload="auto"></video>
+        </div>
+
+        <div>
+          <label>2. Audio Track (MP3/WAV)</label>
+          <input type="file" id="audioUpload" accept="audio/*">
+          <audio id="audioPlayer" controls></audio>
+          <button class="btn-secondary" style="width: 100%; margin-top: 0.4rem; padding: 0.4rem;" onclick="generateSynthTone()">
+            ⚡ Generate Demo Track (with 3s Lead-in)
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ANIMATION, OUTLINE & COUNTDOWN CONTROLS -->
+    <div class="panel">
+      <div class="grid-4">
+        <div>
+          <label>Animation Style</label>
+          <select id="animStyle">
+            <option value="wipe">Karaoke Smooth Wipe</option>
+            <option value="bounce">Bouncy Pop-Up</option>
+            <option value="neon">Neon Glow Pulse</option>
+            <option value="zoom">Zoom & Rise</option>
+          </select>
+        </div>
+
+        <div>
+          <label>Sing Highlight Color</label>
+          <select id="activeColor">
+            <option value="#ec4899">Neon Pink</option>
+            <option value="#06b6d4">Electric Cyan</option>
+            <option value="#eab308">Golden Yellow</option>
+            <option value="#22c55e">Bright Green</option>
+          </select>
+        </div>
+
+        <div>
+          <label>Text Outline Color</label>
+          <select id="outlineColor">
+            <option value="#000000" selected>Deep Black (#000000)</option>
+            <option value="#0f172a">Dark Navy (#0f172a)</option>
+            <option value="#ffffff">Pure White (#ffffff)</option>
+            <option value="#7e22ce">Dark Purple (#7e22ce)</option>
+          </select>
+        </div>
+
+        <div>
+          <label>Outline Thickness</label>
+          <select id="outlineWidth">
+            <option value="4">Thin (4px)</option>
+            <option value="8" selected>Medium (8px)</option>
+            <option value="12">Thick (12px)</option>
+            <option value="0">No Outline</option>
+          </select>
+        </div>
+
+        <div>
+          <label>Font Size</label>
+          <select id="fontSize">
+            <option value="48">Medium (48px)</option>
+            <option value="56" selected>Large (56px)</option>
+            <option value="66">Extra Large (66px)</option>
+          </select>
+        </div>
+
+        <div>
+          <label>Countdown Duration</label>
+          <select id="countdownLength">
+            <option value="3" selected>3 Seconds (3.. 2.. 1..)</option>
+            <option value="4">4 Seconds</option>
+            <option value="2">2 Seconds</option>
+            <option value="0">Off (No Countdown)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- LYRICS INPUT & WORD SYNC -->
+    <div class="panel">
+      <label>Lyrics (Enter each stanza / sentence on a new line)</label>
+      <textarea id="rawLyrics">Hello world its great
+Singing with the rhythm of the night
+Feel the music taking control
+Like a diamond in the sky</textarea>
+      
+      <div class="btn-group">
+        <button class="btn-secondary" onclick="parseLyrics()">Load Lyrics into Tracker</button>
+      </div>
+
+      <div class="lyrics-stream" id="lyricsStream"></div>
+
+      <div class="btn-group" style="align-items: center; margin-top: 0.75rem;">
+        <button class="btn-tap" id="tapBtn" onclick="recordTap()">TAP NEXT WORD (SPACEBAR)</button>
+        <button class="btn-secondary" onclick="resetTimings()">Reset Timings</button>
+      </div>
+    </div>
+
+    <!-- EXPORT ACTIONS -->
+    <div class="panel">
+      <label style="margin-bottom: 0.75rem;">Export Media</label>
+      <div class="btn-group">
+        <button class="btn-record" id="recordBtn" onclick="toggleRecordVideo()">🎥 Record & Download MP4 Video</button>
+        <button class="btn-secondary" onclick="exportASS()">Download Subtitles (.ASS)</button>
+        <button class="btn-secondary" onclick="exportLRC()">Download Subtitles (.LRC)</button>
+      </div>
+      <p id="recordStatus" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;"></p>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('stageCanvas');
+    const ctx = canvas.getContext('2d');
+    const bgVideo = document.getElementById('bgVideo');
+    const audio = document.getElementById('audioPlayer');
+
+    let parsedLyrics = [];
+    let flatWords = [];
+    let activeWordIndex = 0;
+    let hasBgVideo = false;
+
+    // Recording State
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let isRecording = false;
+    let audioContext = null;
+    let audioSourceNode = null;
+    let audioDestNode = null;
+
+    window.addEventListener('load', () => {
+      parseLyrics();
+      requestAnimationFrame(renderCanvasLoop);
+    });
+
+    // 1. BACKGROUND VIDEO HANDLING & SMOOTH LOOPING FIX
+    document.getElementById('videoUpload').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        const videoUrl = URL.createObjectURL(file);
+        bgVideo.src = videoUrl;
+        bgVideo.muted = true;
+        bgVideo.loop = true;
+        bgVideo.playsInline = true;
+        bgVideo.load();
+        
+        bgVideo.onloadeddata = () => {
+          hasBgVideo = true;
+          bgVideo.currentTime = 0;
+          if (!audio.paused) {
+            bgVideo.play().catch(() => {});
+          }
+        };
+      }
+    });
+
+    // Explicit video loop restart safeguard
+    bgVideo.addEventListener('ended', () => {
+      bgVideo.currentTime = 0;
+      bgVideo.play().catch(() => {});
+    });
+
+    // 2. AUDIO & VIDEO PLAYHEAD SYNC (No seeking freeze!)
+    document.getElementById('audioUpload').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        audio.src = URL.createObjectURL(file);
+      }
+    });
+
+    audio.addEventListener('play', () => {
+      if (hasBgVideo) {
+        bgVideo.play().catch(() => {});
+      }
+    });
+
+    audio.addEventListener('pause', () => {
+      if (hasBgVideo) {
+        bgVideo.pause();
+      }
+    });
+
+    // ONLY sync when user explicitly scrubs/seeks through the timeline
+    audio.addEventListener('seeked', () => {
+      if (hasBgVideo && bgVideo.duration) {
+        bgVideo.currentTime = audio.currentTime % bgVideo.duration;
+      }
+    });
+
+    // 3. LYRICS PARSER
+    function parseLyrics() {
+      const raw = document.getElementById('rawLyrics').value.trim();
+      parsedLyrics = [];
+      flatWords = [];
+      activeWordIndex = 0;
+
+      raw.split('\n').forEach((lineText, lineIdx) => {
+        const clean = lineText.trim();
+        if (!clean) return;
+
+        const words = clean.split(/\s+/).map((word) => {
+          const wObj = {
+            text: word,
+            time: null,
+            duration: 0.4,
+            lineIdx: lineIdx
+          };
+          flatWords.push(wObj);
+          return wObj;
+        });
+        parsedLyrics.push(words);
+      });
+
+      renderStream();
+      updateTargetDisplay();
+    }
+
+    function renderStream() {
+      const container = document.getElementById('lyricsStream');
+      container.innerHTML = '';
+      parsedLyrics.forEach((line, lIdx) => {
+        const lineDiv = document.createElement('div');
+        lineDiv.className = 'stream-line';
+        lineDiv.id = `line-${lIdx}`;
+        line.forEach(w => {
+          const span = document.createElement('span');
+          span.className = 'stream-word';
+          if (w.time !== null) span.classList.add('synced');
+          span.innerText = w.text;
+          lineDiv.appendChild(span);
+        });
+        container.appendChild(lineDiv);
+      });
+    }
+
+    function updateTargetDisplay() {
+      document.querySelectorAll('.stream-word').forEach(el => el.classList.remove('active-target'));
+      document.querySelectorAll('.stream-line').forEach(el => el.classList.remove('current'));
+
+      if (activeWordIndex < flatWords.length) {
+        const target = flatWords[activeWordIndex];
+        const lineEl = document.getElementById(`line-${target.lineIdx}`);
+        if (lineEl) {
+          lineEl.classList.add('current');
+          const words = lineEl.querySelectorAll('.stream-word');
+          const idx = parsedLyrics[target.lineIdx].indexOf(target);
+          if (words[idx]) {
+            words[idx].classList.add('active-target');
+            words[idx].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+      }
+    }
+
+    // 4. RECORD TIMESTAMPS
+    function recordTap() {
+      if (activeWordIndex >= flatWords.length) return;
+      const ct = audio.currentTime;
+      const target = flatWords[activeWordIndex];
+      target.time = ct;
+
+      if (activeWordIndex > 0) {
+        const prev = flatWords[activeWordIndex - 1];
+        if (prev.time !== null) {
+          prev.duration = Math.max(0.15, ct - prev.time);
+        }
+      }
+
+      activeWordIndex++;
+      renderStream();
+      updateTargetDisplay();
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'INPUT') {
+        e.preventDefault();
+        recordTap();
+      }
+    });
+
+    function resetTimings() {
+      activeWordIndex = 0;
+      flatWords.forEach(w => { w.time = null; w.duration = 0.4; });
+      renderStream();
+      updateTargetDisplay();
+    }
+
+    // 5. CANVAS RENDERING & SMOOTH VIDEO LOOP LOOP
+    function renderCanvasLoop() {
+      requestAnimationFrame(renderCanvasLoop);
+
+      const width = canvas.width;
+      const height = canvas.height;
+      const ct = audio.currentTime;
+
+      // Draw background video smoothly
+      if (hasBgVideo && bgVideo.readyState >= 2) {
+        ctx.drawImage(bgVideo, 0, 0, width, height);
+        // Dimming scrim so subtitles are 100% visible
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+        ctx.fillRect(0, 0, width, height);
+      } else {
+        const gradient = ctx.createLinearGradient(0, 0, width, height);
+        gradient.addColorStop(0, '#0f172a');
+        gradient.addColorStop(1, '#020617');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      const countdownSec = parseFloat(document.getElementById('countdownLength').value);
+      const firstWord = flatWords[0];
+      const hasTimings = firstWord && firstWord.time !== null;
+
+      // COUNTDOWN TIMER DISPLAY
+      if (hasTimings && countdownSec > 0 && ct < firstWord.time) {
+        const timeRemaining = firstWord.time - ct;
+        if (timeRemaining <= countdownSec && timeRemaining >= 0) {
+          renderCountdown(ctx, width, height, timeRemaining, countdownSec);
+        }
+      }
+
+      // DETERMINE ACTIVE STANZA
+      let activeLineIdx = -1;
+      if (hasTimings) {
+        for (let i = 0; i < parsedLyrics.length; i++) {
+          const line = parsedLyrics[i];
+          const firstInLine = line[0];
+          const lastInLine = line[line.length - 1];
+
+          if (firstInLine && firstInLine.time !== null) {
+            const lineStart = firstInLine.time;
+            const lineEnd = (lastInLine.time || lineStart) + (lastInLine.duration || 1);
+
+            let nextLineStart = Infinity;
+            if (i + 1 < parsedLyrics.length && parsedLyrics[i + 1][0]?.time !== null) {
+              nextLineStart = parsedLyrics[i + 1][0].time;
+            }
+
+            const leadIn = (i === 0) ? countdownSec : 0.8;
+            const thresholdEnd = (nextLineStart !== Infinity) ? nextLineStart : lineEnd + 1.5;
+
+            if (ct >= (lineStart - leadIn) && ct < thresholdEnd) {
+              activeLineIdx = i;
+              break;
+            }
+          }
+        }
+      }
+
+      // RENDER ACTIVE STANZA
+      if (activeLineIdx !== -1) {
+        const line = parsedLyrics[activeLineIdx];
+        const style = document.getElementById('animStyle').value;
+        const activeColor = document.getElementById('activeColor').value;
+        const outlineColor = document.getElementById('outlineColor').value;
+        const outlineWidth = parseFloat(document.getElementById('outlineWidth').value);
+        const fontSize = parseInt(document.getElementById('fontSize').value, 10);
+
+        renderKaraokeStanza(ctx, line, ct, width, height, style, activeColor, outlineColor, outlineWidth, fontSize);
+      } else if (!hasTimings) {
+        drawCenteredText("Sync lyrics with Spacebar to preview", width / 2, height / 2 + 20, '#64748b', 34);
+      }
+    }
+
+    // DRAW COUNTDOWN TIMER & DOTS (TJ / Joysound Arcade Style)
+    function renderCountdown(ctx, width, height, timeRemaining, maxSec) {
+      const countNum = Math.ceil(timeRemaining);
+      const frac = timeRemaining - Math.floor(timeRemaining);
+      const pulseScale = 1 + (frac * 0.22);
+
+      ctx.save();
+      const centerX = width / 2;
+      const centerY = height * 0.42;
+
+      // Circle Base
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 46, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+      ctx.strokeStyle = '#ec4899';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.fill();
+
+      // Number text
+      ctx.font = `bold ${Math.round(44 * pulseScale)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#f8fafc';
+      ctx.shadowColor = '#ec4899';
+      ctx.shadowBlur = 15;
+      ctx.fillText(countNum > 0 ? countNum : 'SING!', centerX, centerY);
+
+      // Beat indicator dots
+      const dotRadius = 9;
+      const spacing = 32;
+      const totalDots = Math.min(4, Math.floor(maxSec));
+      const startX = centerX - ((totalDots - 1) * spacing) / 2;
+      const dotY = centerY + 68;
+
+      for (let i = 0; i < totalDots; i++) {
+        ctx.beginPath();
+        ctx.arc(startX + i * spacing, dotY, dotRadius, 0, Math.PI * 2);
+        if (i < (totalDots - countNum + 1)) {
+          ctx.fillStyle = '#06b6d4';
+          ctx.shadowColor = '#06b6d4';
+          ctx.shadowBlur = 10;
+        } else {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+          ctx.shadowBlur = 0;
+        }
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+    // DRAW CURRENT STANZA WITH OUTLINE & ANIMATIONS
+    function renderKaraokeStanza(ctx, line, ct, width, height, style, activeColor, outlineColor, outlineWidth, fontSize) {
+      ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round';
+      ctx.miterLimit = 2;
+
+      const spaceWidth = ctx.measureText(' ').width;
+      const wordMetrics = line.map(w => ({ word: w, width: ctx.measureText(w.text).width }));
+      const totalWidth = wordMetrics.reduce((sum, item) => sum + item.width, 0) + (line.length - 1) * spaceWidth;
+
+      let startX = (width - totalWidth) / 2;
+      const baseY = height * 0.76;
+
+      wordMetrics.forEach(({ word, width: wWidth }) => {
+        const isSung = word.time !== null && ct >= word.time + word.duration;
+        const isActive = word.time !== null && ct >= word.time && ct < word.time + word.duration;
+        const progress = isActive ? (ct - word.time) / word.duration : (isSung ? 1 : 0);
+
+        ctx.save();
+
+        if (style === 'wipe') {
+          // 1. Draw full outline
+          if (outlineWidth > 0) {
+            ctx.strokeStyle = outlineColor;
+            ctx.lineWidth = outlineWidth;
+            ctx.strokeText(word.text, startX, baseY);
+          }
+
+          // 2. Unsung base text
+          ctx.fillStyle = '#cbd5e1';
+          ctx.fillText(word.text, startX, baseY);
+
+          // 3. Progressive active wipe
+          if (progress > 0) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(startX - 2, baseY - fontSize, (wWidth * progress) + 2, fontSize * 2.2);
+            ctx.clip();
+
+            if (outlineWidth > 0) {
+              ctx.strokeStyle = outlineColor;
+              ctx.lineWidth = outlineWidth;
+              ctx.strokeText(word.text, startX, baseY);
+            }
+
+            ctx.fillStyle = activeColor;
+            ctx.shadowColor = activeColor;
+            ctx.shadowBlur = 15;
+            ctx.fillText(word.text, startX, baseY);
+            ctx.restore();
+          }
+        } 
+        else if (style === 'bounce') {
+          let offsetY = 0;
+          let scale = 1;
+          if (isActive) {
+            offsetY = -Math.sin(progress * Math.PI) * 22;
+            scale = 1 + Math.sin(progress * Math.PI) * 0.25;
+          }
+
+          ctx.translate(startX + wWidth / 2, baseY + offsetY);
+          ctx.scale(scale, scale);
+
+          if (outlineWidth > 0) {
+            ctx.strokeStyle = outlineColor;
+            ctx.lineWidth = outlineWidth;
+            ctx.strokeText(word.text, -wWidth / 2, 0);
+          }
+
+          ctx.fillStyle = isActive ? activeColor : (isSung ? '#38bdf8' : '#cbd5e1');
+          if (isActive) {
+            ctx.shadowColor = activeColor;
+            ctx.shadowBlur = 20;
+          }
+          ctx.fillText(word.text, -wWidth / 2, 0);
+        } 
+        else if (style === 'neon') {
+          if (outlineWidth > 0) {
+            ctx.strokeStyle = outlineColor;
+            ctx.lineWidth = outlineWidth;
+            ctx.strokeText(word.text, startX, baseY);
+          }
+
+          if (isActive) {
+            ctx.shadowColor = activeColor;
+            ctx.shadowBlur = 25 + Math.sin(progress * Math.PI * 4) * 10;
+            ctx.fillStyle = '#ffffff';
+          } else {
+            ctx.fillStyle = isSung ? activeColor : '#64748b';
+            ctx.shadowBlur = 0;
+          }
+          ctx.fillText(word.text, startX, baseY);
+        } 
+        else if (style === 'zoom') {
+          let scale = isActive ? 1 + (1 - progress) * 0.3 : 1;
+          ctx.translate(startX + wWidth / 2, baseY);
+          ctx.scale(scale, scale);
+
+          if (outlineWidth > 0) {
+            ctx.strokeStyle = outlineColor;
+            ctx.lineWidth = outlineWidth;
+            ctx.strokeText(word.text, -wWidth / 2, 0);
+          }
+
+          ctx.fillStyle = isActive ? activeColor : (isSung ? '#f8fafc' : '#64748b');
+          ctx.fillText(word.text, -wWidth / 2, 0);
+        }
+
+        ctx.restore();
+        startX += wWidth + spaceWidth;
+      });
+    }
+
+    function drawCenteredText(text, x, y, color, size) {
+      ctx.font = `bold ${size}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = color;
+      ctx.fillText(text, x, y);
+    }
+
+    // 6. MP4 VIDEO EXPORT
+    async function toggleRecordVideo() {
+      const recordBtn = document.getElementById('recordBtn');
+      const badge = document.getElementById('recordingBadge');
+      const status = document.getElementById('recordStatus');
+
+      if (isRecording) {
+        mediaRecorder.stop();
+        return;
+      }
+
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        audioDestNode = audioContext.createMediaStreamDestination();
+        audioSourceNode = audioContext.createMediaElementSource(audio);
+        audioSourceNode.connect(audioContext.destination);
+        audioSourceNode.connect(audioDestNode);
+      }
+
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+
+      const canvasStream = canvas.captureStream(30);
+      const combinedTracks = [...canvasStream.getVideoTracks()];
+      const audioTracks = audioDestNode.stream.getAudioTracks();
+      if (audioTracks.length > 0) combinedTracks.push(audioTracks[0]);
+
+      const combinedStream = new MediaStream(combinedTracks);
+
+      let options = { mimeType: 'video/webm' };
+      let ext = 'webm';
+
+      if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1,mp4a.40.2')) {
+        options = { mimeType: 'video/mp4;codecs=avc1,mp4a.40.2' };
+        ext = 'mp4';
+      } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+        options = { mimeType: 'video/mp4' };
+        ext = 'mp4';
+      }
+
+      recordedChunks = [];
+      mediaRecorder = new MediaRecorder(combinedStream, options);
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        isRecording = false;
+        recordBtn.innerText = "🎥 Record & Download MP4 Video";
+        recordBtn.classList.remove('btn-primary');
+        recordBtn.classList.add('btn-record');
+        badge.style.display = 'none';
+        status.innerText = "Video export complete! Downloading now...";
+
+        const blob = new Blob(recordedChunks, { type: options.mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `karaoke_stanza_video.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+
+      audio.currentTime = 0;
+      if (hasBgVideo) {
+        bgVideo.currentTime = 0;
+        bgVideo.play().catch(() => {});
+      }
+
+      mediaRecorder.start();
+      audio.play();
+
+      isRecording = true;
+      recordBtn.innerText = "⏹ Stop & Save Video";
+      recordBtn.classList.remove('btn-record');
+      recordBtn.classList.add('btn-primary');
+      badge.style.display = 'block';
+      status.innerText = "Recording in progress... Let the track finish or click Stop.";
+
+      audio.onended = () => {
+        if (isRecording) mediaRecorder.stop();
+      };
+    }
+
+    // 7. SUBTITLE EXPORTERS (.ASS & .LRC)
+    function formatASSTime(sec) {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = Math.floor(sec % 60);
+      const cs = Math.floor((sec % 1) * 100);
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+    }
+
+    function formatLRCTime(sec) {
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      const cs = Math.floor((sec % 1) * 100);
+      return `[${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}]`;
+    }
+
+    function exportASS() {
+      const outlineWidth = document.getElementById('outlineWidth').value;
+      let ass = `[Script Info]\nTitle: Karaoke Pro\nScriptType: v4.00+\nPlayResX: 1280\nPlayResY: 720\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Karaoke,Arial,52,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,${outlineWidth},2,2,30,30,65,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n`;
+
+      parsedLyrics.forEach(line => {
+        const synced = line.filter(w => w.time !== null);
+        if (synced.length === 0) return;
+        const start = synced[0].time;
+        const last = synced[synced.length - 1];
+        const end = last.time + (last.duration || 1.0);
+
+        let kText = '';
+        line.forEach(w => {
+          kText += `{\\k${Math.round((w.duration || 0.4) * 100)}}${w.text} `;
+        });
+        ass += `Dialogue: 0,${formatASSTime(start)},${formatASSTime(end)},Karaoke,,0,0,0,,${kText.trim()}\n`;
+      });
+
+      downloadFile(ass, 'karaoke_subtitles.ass', 'text/plain');
+    }
+
+    function exportLRC() {
+      let lrc = `[ti:Karaoke Subtitles]\n`;
+      parsedLyrics.forEach(line => {
+        const first = line.find(w => w.time !== null);
+        if (!first) return;
+        let lineLrc = formatLRCTime(first.time);
+        line.forEach(w => {
+          if (w.time !== null) lineLrc += `<${formatLRCTime(w.time).replace('[','').replace(']','')}> ${w.text} `;
+          else lineLrc += `${w.text} `;
+        });
+        lrc += lineLrc.trim() + '\n';
+      });
+      downloadFile(lrc, 'karaoke_subtitles.lrc', 'text/plain');
+    }
+
+    function downloadFile(content, fileName, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+    }
+
+    // 8. DEMO SYNTH TRACK (With 3s Lead-In Beeps)
+    function generateSynthTone() {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const sampleRate = ctx.sampleRate;
+      const duration = 22;
+      const buffer = ctx.createBuffer(1, sampleRate * duration, sampleRate);
+      const data = buffer.getChannelData(0);
+
+      [0.0, 1.0, 2.0].forEach(t => {
+        const start = Math.floor(t * sampleRate);
+        for (let s = 0; s < 1200; s++) {
+          data[start + s] = Math.sin(s * 0.2) * Math.exp(-s / 250) * 0.4;
+        }
+      });
+
+      for (let i = 3.0; i < duration; i += 0.6) {
+        const startSample = Math.floor(i * sampleRate);
+        for (let s = 0; s < 500; s++) {
+          data[startSample + s] = Math.sin(s * 0.12) * Math.exp(-s / 120);
+        }
+      }
+
+      const out = new DataView(new ArrayBuffer(buffer.length * 2 + 44));
+      function setUint16(data, pos) { out.setUint16(pos, data, true); }
+      function setUint32(data, pos) { out.setUint32(pos, data, true); }
+
+      setUint32(0x46464952, 0); setUint32(out.byteLength - 8, 4); setUint32(0x45564157, 8);
+      setUint32(0x20746d66, 12); setUint32(16, 16); setUint16(1, 20); setUint16(1, 22);
+      setUint32(sampleRate, 24); setUint32(sampleRate * 2, 28); setUint16(2, 32); setUint16(16, 34);
+      setUint32(0x61746164, 36); setUint32(out.byteLength - 44, 40);
+
+      let offset = 44;
+      for (let i = 0; i < buffer.length; i++) {
+        const s = Math.max(-1, Math.min(1, data[i]));
+        out.setInt16(offset, s < 0 ? s * 32768 : s * 32767, true);
+        offset += 2;
+      }
+
+      audio.src = URL.createObjectURL(new Blob([out.buffer], { type: "audio/wav" }));
+      audio.play();
+    }
+  </script>
+</body>
+</html>
